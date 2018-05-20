@@ -8,7 +8,7 @@ var server = http.createServer(function(request, response) {
 server.listen(9000, function() { });
 
 var users = {};
-
+var loggedIn = [];
 
 // create the server
 wsServer = new WebSocketServer({
@@ -28,12 +28,73 @@ wsServer.on("request", function(request) {
       data = JSON.parse(message.utf8Data);
       switch (data.type) {
         case "text":
-          console.log("New message! \n \"", data.message, "\"");
+          if (loggedIn.indexOf(connection) != -1 ) {
+            console.log("New message!\n", data.message);
+            for (login in users) {
+              if (users[login] != connection) {
+                data = {
+                  "type": "text",
+                  "message": data.message
+                }
+                users[login].send(JSON.stringify(data));
+              }
+            }
+          } else {
+            data = {
+              "type": "error",
+              "error": "You are not logged in"
+            }
+            connection.send(JSON.stringify(data));
+          }
           break;
         case "auth":
-          console.log("New auth: ", data.login);
+          if (data.action == "login") {
+            login = data.login;
+            if (!(login in users)) {
+              console.log("New auth:", login);
+              users[login] = connection;
+              loggedIn.push(connection);
+              data = {
+                "type": "info",
+                "info": "You logged in as" + login
+              }
+              connection.send(JSON.stringify(data));
+              data = {
+                "type": "event",
+                "event": "loggedIn"
+              }
+              connection.send(JSON.stringify(data));
+              
+            } else {
+              data = {
+                "type": "error",
+                "error": "User already exists"
+              }
+              connection.send(JSON.stringify(data));
+            }
+
+          } else if (data.action == "logout") {
+            //console.log("log out");
+            for (var login in users) {
+              if (users[login] == connection) {
+                delete users[login];
+                console.log(login, "logged out");
+                data = {
+                  "type": "event",
+                  "event": "loggedOut"
+                }
+                connection.send(JSON.stringify(data));
+                data = {
+                  "type": "info",
+                  "info": "You logged in as" + login
+                }
+                connection.send(JSON.stringify(data));
+              }
+            }
+            delete loggedIn[loggedIn.indexOf(connection)];
+          }
           break;
-        case default:
+        default:
           console.log("Wrong type of data!");
       }
   
@@ -41,6 +102,12 @@ wsServer.on("request", function(request) {
   });
 
   connection.on("close", function(connection) {
-    console.log("User disconnected");
+    for (var login in users) {
+      if (users[login] == connection) {
+        delete users[login];
+        console.log(login, "logged out");
+      }
+    }
+    delete loggedIn[loggedIn.indexOf(connection)];
   });
 });
